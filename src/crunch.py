@@ -19,11 +19,7 @@ import subprocess
 import time
 from subprocess import CalledProcessError
 
-from multiprocessing import Lock, Pool, cpu_count
-
-# Locks
-stdstream_lock = Lock()
-logging_lock = Lock()
+from multiprocessing import Pool, cpu_count
 
 # Application Constants
 VERSION = "4.0.0"
@@ -155,8 +151,6 @@ def main(argv):
                 + "' is not a valid PNG file."
                 + os.linesep
             )
-            if is_gui(argv):
-                log_error(png_path + " is not a valid PNG file.")
             NOTPNG_ERROR_FOUND = True
 
     # Exit after checking all file requests and reporting on all invalid file paths (above)
@@ -165,10 +159,6 @@ def main(argv):
             "The request was not executed successfully. Please try again with one or more valid PNG files."
             + os.linesep
         )
-        if is_gui(argv):
-            log_error(
-                "The request was not executed successfully. Please try again with one or more valid PNG files."
-            )
         sys.exit(1)
 
     # Dependency error handling
@@ -180,10 +170,6 @@ def main(argv):
             + "'"
             + os.linesep
         )
-        if is_gui(argv):
-            log_error(
-                "pngquant was not found on the expected path " + PNGQUANT_EXE_PATH
-            )
         sys.exit(1)
     elif not os.path.exists(ZOPFLIPNG_EXE_PATH):
         sys.stderr.write(
@@ -193,10 +179,6 @@ def main(argv):
             + "'"
             + os.linesep
         )
-        if is_gui(argv):
-            log_error(
-                "zopflipng was not found on the expected path " + ZOPFLIPNG_EXE_PATH
-            )
         sys.exit(1)
 
     # ////////////////////////////////////
@@ -228,7 +210,6 @@ def main(argv):
         try:
             p.map(optimize_png, png_path_list)
         except Exception as e:
-            stdstream_lock.acquire()
             sys.stderr.write("-----" + os.linesep)
             sys.stderr.write(
                 ERROR_STRING
@@ -236,9 +217,6 @@ def main(argv):
                 + os.linesep
             )
             sys.stderr.write(str(e) + os.linesep)
-            stdstream_lock.release()
-            if is_gui(argv):
-                log_error(str(e))
             sys.exit(1)
 
     # end of successful processing, exit code 0
@@ -290,7 +268,6 @@ def optimize_png(png_path):
             # below if it is not present to these errors
             pass
         else:
-            stdstream_lock.acquire()
             sys.stderr.write(
                 ERROR_STRING
                 + " "
@@ -298,28 +275,8 @@ def optimize_png(png_path):
                 + " processing failed at the pngquant stage."
                 + os.linesep
             )
-            stdstream_lock.release()
-            if is_gui(sys.argv):
-                log_error(
-                    img.pre_filepath
-                    + " processing failed at the pngquant stage. "
-                    + os.linesep
-                    + str(cpe)
-                )
-                return None
-            else:
-                raise cpe
     except Exception as e:
-        if is_gui(sys.argv):
-            log_error(
-                img.pre_filepath
-                + " processing failed at the pngquant stage. "
-                + os.linesep
-                + str(e)
-            )
-            return None
-        else:
-            raise e
+        raise e
 
     # ---------------
     # zopflipng stage
@@ -344,7 +301,6 @@ def optimize_png(png_path):
     try:
         subprocess.check_output(zopflipng_command, stderr=subprocess.STDOUT, shell=True)
     except CalledProcessError as cpe:
-        stdstream_lock.acquire()
         sys.stderr.write(
             ERROR_STRING
             + " "
@@ -352,28 +308,8 @@ def optimize_png(png_path):
             + " processing failed at the zopflipng stage."
             + os.linesep
         )
-        stdstream_lock.release()
-        if is_gui(sys.argv):
-            log_error(
-                img.pre_filepath
-                + " processing failed at the zopflipng stage. "
-                + os.linesep
-                + str(cpe)
-            )
-            return None
-        else:
-            raise cpe
     except Exception as e:
-        if is_gui(sys.argv):
-            log_error(
-                img.pre_filepath
-                + " processing failed at the pngquant stage. "
-                + os.linesep
-                + str(e)
-            )
-            return None
-        else:
-            raise e
+        raise e
 
     # Check file size post-optimization and report comparison with pre-optimization file
     img.get_post_filesize()
@@ -385,7 +321,6 @@ def optimize_png(png_path):
         percent_string = format_ansi_green(percent_string)
 
     # report percent original file size / post file path / size (bytes) to stdout (command line executable)
-    stdstream_lock.acquire()
     print(
         "[ "
         + percent_string
@@ -395,7 +330,6 @@ def optimize_png(png_path):
         + str(img.post_size)
         + " bytes)"
     )
-    stdstream_lock.release()
 
     # report percent original file size / post file path / size (bytes) to log file (macOS GUI + right-click service)
     if is_gui(sys.argv):
@@ -469,27 +403,6 @@ def is_valid_png(filepath):
         signature = filer.read(8)
     # return boolean test result for first eight bytes == expected PNG byte signature
     return signature == expected_signature
-
-
-def log_error(errmsg):
-    current_time = time.strftime("%m-%d-%y %H:%M:%S")
-    logging_lock.acquire()
-    with open(LOGFILE_PATH, "a") as filewriter:
-        filewriter.write(current_time + "\tERROR\t" + errmsg + os.linesep)
-        filewriter.flush()
-        os.fsync(filewriter.fileno())
-    logging_lock.release()
-
-
-def log_info(infomsg):
-    current_time = time.strftime("%m-%d-%y %H:%M:%S")
-    logging_lock.acquire()
-    with open(LOGFILE_PATH, "a") as filewriter:
-        filewriter.write(current_time + "\tINFO\t" + infomsg + os.linesep)
-        filewriter.flush()
-        os.fsync(filewriter.fileno())
-    logging_lock.release()
-    return None
 
 
 def shellquote(filepath):
